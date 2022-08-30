@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# Check for number of arguments
 if [ ! $# -eq 2 ]
 then
 	echo "Invalid number of arguments! Needs to be 2"
@@ -9,6 +10,7 @@ fi
 FILESDIR=$1
 SEARCHSTR=$2
 
+# Check if the directory exists
 if [ ! -d $FILESDIR ]
 then
 	echo "Invalid directory path!"
