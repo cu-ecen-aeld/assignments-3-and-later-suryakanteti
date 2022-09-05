@@ -3,8 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdio.h>
 #include <syslog.h>
+#include <errno.h>
 
 #define VALID_NUM_OF_ARGUMENTS 3
 
