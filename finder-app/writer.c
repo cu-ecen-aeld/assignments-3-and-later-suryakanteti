@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
 	ssize_t writeResult;
 	
 	syslog(LOG_INFO, "Writing string %s into file %s", writeStr, writeFile);
-	while (len != 0 && (writeResult = write(fd, writeStr, strlen(writeStr)) != 0)
+	while (len != 0 && (writeResult = write(fd, writeStr, strlen(writeStr)) != 0))
 	{
 		if(writeResult == -1)
 		{
