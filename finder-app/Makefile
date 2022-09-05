@@ -1,9 +1,14 @@
+# Default compiler
+CC = gcc
+
+# Writer application
 writer: clean writer.o
-	gcc writer.o -o writer
-	
+	$(CROSS_COMPILE)$(CC) writer.o -o writer
+
+# Writer .o files	
 writer.o: writer.c
-	gcc -c writer.c
+	$(CROSS_COMPILE)$(CC) -c writer.c
 	
+# Clean all binaries
 clean:
-	rm -f *.o
-	rm -f writer
+	rm -f *.o writer
