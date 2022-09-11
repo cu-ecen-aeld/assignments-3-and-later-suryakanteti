@@ -78,7 +78,8 @@ else
 fi
 
 # TODO: Make and install busybox
-sudo env "PATH=$PATH" make ARCH=$ARCH CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=/home/surya/Documents/AESD/linux-kernel/rootfs/bin install
+sudo env "PATH=$PATH" make ARCH=$ARCH CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfs install
+cd _install/
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
@@ -91,8 +92,8 @@ cp /usr/lib/x86_64-linux-gnu/libresolv.so.2 ../rootfs/lib
 cp /usr/lib/x86_64-linux-gnu/libc.so.6 ../rootfs/lib
 
 # TODO: Make device nodes
-sudo mknod -m 666 dev/null c 1 3
-sudo mknod -m 666 dev/console c 5 1
+sudo mknod -m 666 ${OUTDIR}/rootfs/dev/null c 1 3
+sudo mknod -m 666 ${OUTDIR}/rootfs/dev/console c 5 1
 
 # TODO: Clean and build the writer utility
 cd $FINDER_APP_DIR
