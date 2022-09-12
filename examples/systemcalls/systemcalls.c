@@ -82,11 +82,9 @@ bool do_exec(int count, ...)
     {
     	return false;
     }
-    
-    // Execute the command using execv()
-    if(childPid == 0) // This is inside child
+    else if(childPid == 0) // This is inside child
     {
-    	if(execv(command[0], command + 1) == -1)
+    	if(execv(command[0], command) == -1)
     	{
     		abort();
     	}
@@ -94,8 +92,8 @@ bool do_exec(int count, ...)
     else // This is parent
     {
     	int waitStatus;
-    	waitpid(childPid, &waitStatus, WNOHANG);
-    	if(waitStatus != childPid) // Any case other than child pid is false
+    	waitpid(childPid, &waitStatus, 0);
+    	if(waitStatus == -1) // Error case
     	{
     		return false;
     	}
@@ -177,7 +175,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     	close(fd);
     	
     	// Execute the command using execv()
-    	if(execv(command[0], command + 1) == -1)
+    	if(execv(command[0], command) == -1)
     	{
     		abort();
     	}
@@ -186,8 +184,8 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     
     	// Inside parent
     	int waitStatus;
-    	waitpid(childPid, &waitStatus, WNOHANG);
-    	if(waitStatus != childPid) // Any case other than child pid is false
+    	waitpid(childPid, &waitStatus, 0);
+    	if(waitStatus == -1) // Error
     	{
     		return false;
     	}
