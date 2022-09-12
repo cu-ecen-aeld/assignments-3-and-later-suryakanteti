@@ -84,19 +84,38 @@ bool do_exec(int count, ...)
     }
     
     // Execute the command using execv()
-    execv(command[0], command + 1);
-    
-    // Wait for the child
-    int waitStatus;
-    wait(&waitStatus);
-    
-    if(waitStatus != childPid) // Any case other than child pid is false
+    if(childPid == 0) // This is inside child
     {
-    	return false;
+    	if(execv(command[0], command + 1) == -1)
+    	{
+    		abort();
+    	}
     }
-
+    else // This is parent
+    {
+    	int waitStatus;
+    	waitpid(childPid, &waitStatus, WNOHANG);
+    	if(waitStatus != childPid) // Any case other than child pid is false
+    	{
+    		return false;
+    	}
+    	
+    	// Check if the child process exited correctly with zero return code
+    	if(WIFEXITED(waitStatus) == true)
+    	{
+    		if(WEXITSTATUS(waitStatus) != 0)
+    		{
+    			return false;
+    		}
+    	}
+    	else
+    	{
+    		return false;
+    	}
+    	
+    }
+    
     va_end(args);
-
     return true;
 }
 
@@ -148,7 +167,8 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     	return false;
     	
     case 0:
-    	
+    
+    	// Inside child
     	if(dup2(fd, 1) < 0)
     	{
     		perror("dup2");
@@ -157,24 +177,35 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     	close(fd);
     	
     	// Execute the command using execv()
-    	execv(command[0], command + 1);
+    	if(execv(command[0], command + 1) == -1)
+    	{
+    		abort();
+    	}
+    	
+    default:
     
-    	// Wait for the child
+    	// Inside parent
     	int waitStatus;
-    	wait(&waitStatus);
-    
+    	waitpid(childPid, &waitStatus, WNOHANG);
     	if(waitStatus != childPid) // Any case other than child pid is false
     	{
     		return false;
     	}
     	
-    default:
-    
-    	close(fd);
-    	return false;
+    	// Check if the child process exited correctly with zero return code
+    	if(WIFEXITED(waitStatus) == true)
+    	{
+    		if(WEXITSTATUS(waitStatus) != 0)
+    		{
+    			return false;
+    		}
+    	}
+    	else
+    	{
+    		return false;
+    	}
     }
     
     va_end(args);
-
     return true;
 }
