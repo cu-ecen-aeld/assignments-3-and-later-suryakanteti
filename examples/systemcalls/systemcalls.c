@@ -154,6 +154,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     }
     
     pid_t childPid = fork();
+    int waitStatus;
     
     switch(childPid)
     {
@@ -183,7 +184,6 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     default:
     
     	// Inside parent
-    	int waitStatus;
     	waitpid(childPid, &waitStatus, 0);
     	if(waitStatus == -1) // Error
     	{

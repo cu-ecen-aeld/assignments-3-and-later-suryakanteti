@@ -82,7 +82,6 @@ fi
 
 # TODO: Make and install busybox
 sudo env "PATH=$PATH" make ARCH=$ARCH CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfs install
-#cd _install/
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a busybox | grep "program interpreter"
@@ -114,8 +113,17 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 cp finder.sh ${OUTDIR}/rootfs/home
+chmod +x ${OUTDIR}/rootfs/home/finder.sh
+
 cp finder-test.sh ${OUTDIR}/rootfs/home
+chmod +x ${OUTDIR}/rootfs/home/finder-test.sh
+
 cp writer ${OUTDIR}/rootfs/home
+chmod +x ${OUTDIR}/rootfs/home/writer
+
+cp autorun-qemu.sh ${OUTDIR}/rootfs/home
+chmod +x ${OUTDIR}/rootfs/home/autorun-qemu.sh
+
 mkdir ${OUTDIR}/rootfs/home/conf
 cp conf/* ${OUTDIR}/rootfs/home/conf
 
