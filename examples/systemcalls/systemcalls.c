@@ -1,5 +1,10 @@
 #include "systemcalls.h"
 
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -17,6 +22,16 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
+    // SURYA: Check if cmd is NULL?
+    
+    int retValue = system(cmd);
+    
+    // -1 if child process not created, 127 if shell could not be executed in child process
+    if(retValue == -1 || retValue == 127)
+    {
+    	return false;
+    }
+    
     return true;
 }
 
@@ -59,8 +74,46 @@ bool do_exec(int count, ...)
  *
 */
 
+    // Fork to create child process
+    // negative val is unssuccesful, 0 is returned to child, positive is returned to parent
+    
+    pid_t childPid = fork();
+    if (childPid < 0) // Child process creation failed
+    {
+    	return false;
+    }
+    else if(childPid == 0) // This is inside child
+    {
+    	if(execv(command[0], command) == -1)
+    	{
+    		abort();
+    	}
+    }
+    else // This is parent
+    {
+    	int waitStatus;
+    	waitpid(childPid, &waitStatus, 0);
+    	if(waitStatus == -1) // Error case
+    	{
+    		return false;
+    	}
+    	
+    	// Check if the child process exited correctly with zero return code
+    	if(WIFEXITED(waitStatus) == true)
+    	{
+    		if(WEXITSTATUS(waitStatus) != 0)
+    		{
+    			return false;
+    		}
+    	}
+    	else
+    	{
+    		return false;
+    	}
+    	
+    }
+    
     va_end(args);
-
     return true;
 }
 
@@ -92,8 +145,65 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
+    
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if(fd < 0)
+    {
+    	perror("open");
+    	return false;
+    }
+    
+    pid_t childPid = fork();
+    int waitStatus;
+    
+    switch(childPid)
+    {
+    
+    case -1:
+    	
+    	perror("fork");
+    	close(fd);
+    	return false;
+    	
+    case 0:
+    
+    	// Inside child
+    	if(dup2(fd, 1) < 0)
+    	{
+    		perror("dup2");
+    		abort();
+    	}
+    	close(fd);
+    	
+    	// Execute the command using execv()
+    	if(execv(command[0], command) == -1)
+    	{
+    		abort();
+    	}
+    	
+    default:
+    
+    	// Inside parent
+    	waitpid(childPid, &waitStatus, 0);
+    	if(waitStatus == -1) // Error
+    	{
+    		return false;
+    	}
+    	
+    	// Check if the child process exited correctly with zero return code
+    	if(WIFEXITED(waitStatus) == true)
+    	{
+    		if(WEXITSTATUS(waitStatus) != 0)
+    		{
+    			return false;
+    		}
+    	}
+    	else
+    	{
+    		return false;
+    	}
+    }
+    
     va_end(args);
-
     return true;
 }
