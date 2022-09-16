@@ -77,20 +77,11 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
     
     funcArgs->wait_to_obtain_ms = wait_to_obtain_ms;
     funcArgs->wait_to_release_ms = wait_to_release_ms;
-    funcArgs->mutex = mutex;
     funcArgs->thread_complete_success = true; // Default case is success
-    
-    // Setup mutex
-    int rc = pthread_mutex_init(mutex, NULL);
-    if(rc != 0)
-    {
-    	ERROR_LOG("Error setting up the mutex. rc = %d", rc);
-    	free(funcArgs);
-    	return false;
-    }
+    funcArgs->mutex = mutex; // Set mutex in the structure
     
     // Create the thread
-    rc = pthread_create (thread, NULL, threadfunc, funcArgs);
+    int rc = pthread_create (thread, NULL, threadfunc, funcArgs);
     if(rc != 0)
     {
     	ERROR_LOG("Error creating the thread. rc = %d", rc);
