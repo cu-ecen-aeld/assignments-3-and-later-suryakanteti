@@ -1,6 +1,8 @@
 # Default compiler
 CC = gcc
 
+all: writer
+
 # Writer application
 writer: clean writer.o
 	$(CROSS_COMPILE)$(CC) writer.o -o writer
