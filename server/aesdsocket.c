@@ -4,11 +4,14 @@
 #include <netdb.h>
 
 #include <syslog.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <signal.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #define PORT_NUM_STR "9000"
 #define MAX_PENDING_CONNECTIONS 3
@@ -85,7 +88,7 @@ int main()
 	{
 	
 		// Accept the connection
-		acceptedSocketfd = accept(serverSockfd, clientInfo, clientInfoLen);
+		acceptedSocketfd = accept(serverSockfd, (struct sockaddr * restrict)clientInfo, clientInfoLen);
 		if(acceptedSocketfd == -1)
 		{
 			perror("accept");
@@ -97,7 +100,7 @@ int main()
 	
 		// Create data file if it doesn't exist. Open it
 		int fd;
-		fd = open(AESD_SOCKET_DATA_FILE, O_APPEND | O_CREAT);
+		fd = open(AESD_SOCKET_DATA_FILE, O_APPEND | O_CREAT, S_IWUSR | S_IRGRP | S_IROTH);
 		if(fd == -1)
 		{
 			perror("socket data file open");
@@ -122,8 +125,7 @@ int main()
 			return -1;
 		}
 	
-		memset(message, 0, strlen(message)); // Make all zeroes
-	
+		memset(pktBuf, 0, strlen(pktBuf)); // Make all zeroes
 	
 		while((retVal = recv(acceptedSocketfd, pktBuf, sizeof pktBuf, 0)) != 0) // Until nothing more to read
 		{
@@ -154,7 +156,7 @@ int main()
 			else
 			{
 				// Buffer has newline character. Send to client
-				send(acceptedSocketfd, pktBuf, ptr - pktBuf);
+				send(acceptedSocketfd, pktBuf, ptr - pktBuf, 0);
 			
 				//Write till there into the file
 				rc = write(fd, pktBuf, (ptr - pktBuf) * sizeof(char));
