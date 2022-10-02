@@ -30,11 +30,12 @@ void SignalHandler(int signo)
 int main()
 {	
 	int rc, serverSockfd, acceptedSocketfd;
-	struct addrinfo hints, *serverInfo, *clientInfo;
-	socklen_t* clientInfoLen;
+	struct addrinfo hints, *serverInfo;
+	struct sockaddr clientInfo;
+	socklen_t clientInfoLen = sizeof clientInfo;
 	
 	//Register for signals
-	signal(SIGINT, SignalHandler);
+	//signal(SIGINT, SignalHandler);
 	signal(SIGTERM, SignalHandler);
 	
 	// Set up syslog
@@ -84,23 +85,24 @@ int main()
 		return -1;
 	}
 	
+	
 	while(!terminate)
 	{
 	
 		// Accept the connection
-		acceptedSocketfd = accept(serverSockfd, (struct sockaddr * restrict)clientInfo, clientInfoLen);
+		acceptedSocketfd = accept(serverSockfd, &clientInfo, &clientInfoLen);
 		if(acceptedSocketfd == -1)
 		{
 			perror("accept");
 			freeaddrinfo(serverInfo);
 			return -1;
 		}
-		syslog(LOG_INFO, "Accept connection from %s", clientInfo->ai_addr->sa_data); // Log client IP to syslog
+		syslog(LOG_INFO, "Accept connection from %s", clientInfo.sa_data); // Log client IP to syslog
 	
 	
-		// Create data file if it doesn't exist. Open it
+		// Create data file if it doesn't exist
 		int fd;
-		fd = open(AESD_SOCKET_DATA_FILE, O_APPEND | O_CREAT, S_IWUSR | S_IRGRP | S_IROTH);
+		fd = open(AESD_SOCKET_DATA_FILE, O_RDWR | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(fd == -1)
 		{
 			perror("socket data file open");
@@ -110,8 +112,8 @@ int main()
 		}
 	
 		// Receive data from client and append to data file
-	
 		char* pktBuf = (char*)(malloc(PACKET_BUFFER_SIZE * sizeof(char))); // Packet buffer of 512 chars
+		int currentBufSize = PACKET_BUFFER_SIZE;
 		ssize_t retVal;
 		char* ptr;
 		int remainingSize = 0;
@@ -125,9 +127,9 @@ int main()
 			return -1;
 		}
 	
-		memset(pktBuf, 0, strlen(pktBuf)); // Make all zeroes
+		memset(pktBuf, 0, currentBufSize); // Make all zeroes
 	
-		while((retVal = recv(acceptedSocketfd, pktBuf, sizeof pktBuf, 0)) != 0) // Until nothing more to read
+		while((retVal = recv(acceptedSocketfd, pktBuf, currentBufSize, 0)) != 0) // Until nothing more to read
 		{
 			if(retVal == -1)
 			{
@@ -143,7 +145,7 @@ int main()
 			if(ptr == NULL)
 			{
 				// No newline character, extend the buffer and continue reading
-				pktBuf = (char*)(realloc(pktBuf, strlen(pktBuf) + PACKET_BUFFER_SIZE));
+				pktBuf = (char*)(realloc(pktBuf, currentBufSize + PACKET_BUFFER_SIZE));
 				if(pktBuf == NULL)
 				{
 					printf("Error while reallocating buffer!\n");
@@ -152,27 +154,28 @@ int main()
 					freeaddrinfo(serverInfo);
 					return -1;
 				}
+				currentBufSize += PACKET_BUFFER_SIZE;
 			}
 			else
 			{
 				// Buffer has newline character. Send to client
-				send(acceptedSocketfd, pktBuf, ptr - pktBuf, 0);
+				send(acceptedSocketfd, pktBuf, ptr - pktBuf + 1, 0);
 			
 				//Write till there into the file
-				rc = write(fd, pktBuf, (ptr - pktBuf) * sizeof(char));
+				rc = write(fd, pktBuf, (ptr - pktBuf + 1) * sizeof(char));
 			
 				// Move rest of the content to the start of buffer
-				remainingSize = (int)(strlen(pktBuf) + pktBuf - ptr - 1);
+				remainingSize = (int)(currentBufSize + pktBuf - ptr - 1);
 				memcpy(pktBuf, ptr + 1, remainingSize);
 			
 				// Clear out the remaining part
-				memset(pktBuf + remainingSize, 0, strlen(pktBuf) - remainingSize);
+				memset(pktBuf + remainingSize, 0, currentBufSize - remainingSize);
 			}
 		}
 	
 		close(fd);
 		close(acceptedSocketfd);
-		syslog(LOG_INFO, "Closed connection from %s", clientInfo->ai_addr->sa_data); // Log that connection closed
+		syslog(LOG_INFO, "Closed connection from %s", clientInfo.sa_data); // Log that connection closed
 	
 	}
 	
