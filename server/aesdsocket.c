@@ -24,6 +24,9 @@
 bool terminate = false;
 bool connectionInProgress = false;
 struct addrinfo* serverInfo = NULL;
+int serverSockfd = -1;
+int acceptedSocketfd = -1;
+char* pktBuf = NULL;
 
 /*
  * Function for handling registered signals
@@ -38,14 +41,22 @@ void SignalHandler(int signo)
 	{
 		int rc = remove(AESD_SOCKET_DATA_FILE);
 		if(rc == -1)
-		{
 			perror("remove socket data file");
-			freeaddrinfo(serverInfo);
-			exit(-1);
-		}
+
+		rc = remove(AESD_SOCKET_DATA_FILE);
+		if(rc == -1)
+			perror("remove socket data file");
 	
-		freeaddrinfo(serverInfo);
-		exit(-1);
+		if(pktBuf != NULL)
+			free(pktBuf);
+		if(acceptedSocketfd != -1)
+			close(acceptedSocketfd);
+		if(serverInfo != NULL)
+			freeaddrinfo(serverInfo);
+		if(serverSockfd != -1)
+			close(serverSockfd);
+
+		exit(0); // SURYA: Exit with 0 or -1?
 	}
 }
 
@@ -78,12 +89,25 @@ void SendFileDataToClient(int fileFd, int socketFd)
 /*
  * Main: Entry point for the program
  */
-int main()
+int main(int argc, char* argv[])
 {	
-	int rc, serverSockfd, acceptedSocketfd;
+	bool daemonMode = false;
+	int rc;
 	struct addrinfo hints;
 	struct sockaddr clientInfo;
 	socklen_t clientInfoLen = sizeof clientInfo;
+
+	// Check arguments
+	while((rc = getopt(argc, argv,"d")) != -1)
+    {
+        switch(rc)
+        {
+            case 'd':
+                daemonMode = true;
+                break;
+        }
+
+    }
 	
 	//Register for signals
 	signal(SIGINT, SignalHandler);
@@ -114,6 +138,7 @@ int main()
 		{
 			perror("getaddrinfo");
 		}
+		close(serverSockfd);
 		return -1;
 	}
 	
@@ -124,7 +149,21 @@ int main()
 	{
 		perror("bind");
 		freeaddrinfo(serverInfo);
+		close(serverSockfd);
 		return -1;
+	}
+
+	// Run in daemon mode based on flag
+	if(daemonMode)
+	{
+		rc = daemon(-1, -1); // Non-zero values to perform daemon operations
+		if(rc == -1)
+		{
+			perror("daemon");
+			freeaddrinfo(serverInfo);
+			close(serverSockfd);
+			return -1;
+		}
 	}
 		
 	// Listen for a connection
@@ -133,9 +172,9 @@ int main()
 	{
 		perror("listen");
 		freeaddrinfo(serverInfo);
+		close(serverSockfd);
 		return -1;
 	}
-	
 	
 	while(!terminate)
 	{
@@ -146,6 +185,7 @@ int main()
 		{
 			perror("accept");
 			freeaddrinfo(serverInfo);
+			close(serverSockfd);
 			return -1;
 		}
 		connectionInProgress = true;
@@ -160,11 +200,12 @@ int main()
 			perror("socket data file open");
 			close(acceptedSocketfd);
 			freeaddrinfo(serverInfo);
+			close(serverSockfd);
 			return -1;
 		}
 	
 		// Receive data from client and append to data file
-		char* pktBuf = (char*)(malloc(PACKET_BUFFER_SIZE * sizeof(char))); // Packet buffer of 512 chars
+		pktBuf = (char*)(malloc(PACKET_BUFFER_SIZE * sizeof(char))); // Packet buffer of 512 chars
 		int currentBufSize = PACKET_BUFFER_SIZE;
 		ssize_t retVal;
 		char* ptr;
@@ -176,6 +217,7 @@ int main()
 			close(fd);
 			close(acceptedSocketfd);
 			freeaddrinfo(serverInfo);
+			close(serverSockfd);
 			return -1;
 		}
 	
@@ -186,9 +228,11 @@ int main()
 			if(retVal == -1)
 			{
 				perror("recv");
+				free(pktBuf);
 				close(fd);
 				close(acceptedSocketfd);
 				freeaddrinfo(serverInfo);
+				close(serverSockfd);
 				return -1;
 			}
 		
@@ -201,9 +245,11 @@ int main()
 				if(pktBuf == NULL)
 				{
 					printf("Error while reallocating buffer!\n");
+					free(pktBuf);
 					close(fd);
 					close(acceptedSocketfd);
 					freeaddrinfo(serverInfo);
+					close(serverSockfd);
 					return -1;
 				}
 				currentBufSize += PACKET_BUFFER_SIZE;
@@ -225,6 +271,7 @@ int main()
 			}
 		}
 	
+		free(pktBuf);
 		close(fd);
 		close(acceptedSocketfd);
 		connectionInProgress = false;
@@ -244,5 +291,6 @@ int main()
 	}
 	
 	freeaddrinfo(serverInfo);
+	close(serverSockfd);
 	return 0;
 }
