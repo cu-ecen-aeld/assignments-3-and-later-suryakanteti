@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 
 #include <syslog.h>
 #include <unistd.h>
@@ -42,11 +43,6 @@ void SignalHandler(int signo)
 		int rc = remove(AESD_SOCKET_DATA_FILE);
 		if(rc == -1)
 			perror("remove socket data file");
-
-		rc = remove(AESD_SOCKET_DATA_FILE);
-		if(rc == -1)
-			perror("remove socket data file");
-	
 		if(pktBuf != NULL)
 			free(pktBuf);
 		if(acceptedSocketfd != -1)
@@ -56,7 +52,7 @@ void SignalHandler(int signo)
 		if(serverSockfd != -1)
 			close(serverSockfd);
 
-		exit(0); // SURYA: Exit with 0 or -1?
+		exit(0);
 	}
 }
 
@@ -123,11 +119,20 @@ int main(int argc, char* argv[])
 		perror("socket");
 		return -1;
 	}
+
+	// Set up socket to reuse the address
+	int a = 1;
+	rc = setsockopt(serverSockfd, SOL_SOCKET, SO_REUSEADDR, &a, sizeof(int));
+	if(rc == -1)
+	{
+		perror("setsockopt");
+		return -1;
+	}
 	
 	// Get addrinfo for socket
 	memset(&hints, 0, sizeof hints);
 	hints.ai_flags = AI_PASSIVE;
-	hints.ai_family = AF_INET; // SURYA: Should this be just IPv4?
+	hints.ai_family = AF_INET;
     	hints.ai_socktype = SOCK_STREAM;
 	
 	rc = getaddrinfo(NULL, PORT_NUM_STR, &hints, &serverInfo);
@@ -178,7 +183,6 @@ int main(int argc, char* argv[])
 	
 	while(!terminate)
 	{
-	
 		// Accept the connection
 		acceptedSocketfd = accept(serverSockfd, &clientInfo, &clientInfoLen);
 		if(acceptedSocketfd == -1)
@@ -189,7 +193,9 @@ int main(int argc, char* argv[])
 			return -1;
 		}
 		connectionInProgress = true;
-		syslog(LOG_INFO, "Accept connection from %s", clientInfo.sa_data); // Log client IP to syslog
+		char clientIpStr[INET6_ADDRSTRLEN];
+		inet_ntop(AF_INET, &clientInfo, clientIpStr, sizeof(clientIpStr));
+		syslog(LOG_INFO, "Accept connection from %s", clientIpStr); // Log client IP to syslog
 	
 	
 		// Create data file if it doesn't exist
@@ -272,10 +278,11 @@ int main(int argc, char* argv[])
 		}
 	
 		free(pktBuf);
+		pktBuf = NULL;
 		close(fd);
 		close(acceptedSocketfd);
 		connectionInProgress = false;
-		syslog(LOG_INFO, "Closed connection from %s", clientInfo.sa_data); // Log that connection closed
+		syslog(LOG_INFO, "Closed connection from %s", clientIpStr); // Log that connection closed
 	
 	}
 	
