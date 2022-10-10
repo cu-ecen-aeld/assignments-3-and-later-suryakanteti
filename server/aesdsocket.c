@@ -17,6 +17,7 @@
 
 #include "queue.h"
 #include <pthread.h>
+#include <sys/time.h>
 
 // Macros
 #define PORT_NUM_STR "9000"
@@ -28,6 +29,9 @@
 bool terminate = false;
 struct addrinfo* serverInfo = NULL;
 int serverSockfd = -1;
+int dataFd = -1;
+bool hasTimeElapsed = false;
+int totalConnections = 0;
 pthread_mutex_t mutex;
 
 // Thread structures and types
@@ -45,174 +49,16 @@ struct threadInfo_s {
 
 SLIST_HEAD(slisthead, threadInfo_s) head = SLIST_HEAD_INITIALIZER(head);
 
+// Function declarations
+void SignalHandler(int signo);
+void SendFileDataToClient(int fileFd, int socketFd);
+int SetTimer();
+int ClearTimer();
+void WriteTimestampToFile(int fd);
+void CleanUpList();
+void AlarmHandler(int signo);
+void* ThreadSendAndReceive(void* threadParams);
 
-/*
- * Function for handling registered signals
- */
-void SignalHandler(int signo)
-{
-	syslog(LOG_INFO, "Caught signal, exiting");
-	terminate = true;
-
-	// Close all threads
-	struct threadInfo_s* ptr = NULL;
-	while(!SLIST_EMPTY(&head))
-	{
-		ptr = SLIST_FIRST(&head);
-		if(ptr->connectionInProgress == false)
-		{
-			pthread_join(ptr->threadId, NULL);
-			SLIST_REMOVE_HEAD(&head, entries);
-			free(ptr);
-		}
-	}
-
-	int rc = remove(AESD_SOCKET_DATA_FILE);
-	if(rc == -1)
-		perror("remove socket data file");
-	if(serverInfo != NULL)
-		freeaddrinfo(serverInfo);
-	if(serverSockfd != -1)
-		close(serverSockfd);
-
-	exit(0);
-
-}
-
-/*
- * Function to send file content through socket
- */
-void SendFileDataToClient(int fileFd, int socketFd)
-{
-	ssize_t ret;
-	char buf[512];
-
-	// Seek to start of file
-	lseek(fileFd, 0, SEEK_SET);
-
-	while ((ret = read (fileFd, buf, sizeof buf)) != 0)
-	{
-        if (ret == -1) 
-		{
-                if (errno == EINTR)
-                    continue;
-                perror ("read");
-                break;
-        }
-
-		// Send whatever is read to client
-		send(socketFd, buf, (ret/sizeof(char)), 0);
-	}
-}
-
-void* ThreadSendAndReceive(void* threadParams)
-{
-	// Typecast the arguments
-	struct threadInfo_s* params = (struct threadInfo_s*)(threadParams);
-
-	// Log client IP to syslog
-	char clientIpStr[INET6_ADDRSTRLEN];
-	inet_ntop(AF_INET, params->clientInfo, clientIpStr, sizeof(clientIpStr));
-	syslog(LOG_INFO, "Accept connection from %s", clientIpStr);
-
-	char* pktBuf = NULL;
-	int fd;
-	int currentBufSize = PACKET_BUFFER_SIZE;
-	ssize_t retVal;
-	char* ptr;
-	int remainingSize = 0;
-	
-	// Receive data from client and append to data file
-	pktBuf = (char*)(malloc(PACKET_BUFFER_SIZE * sizeof(char))); // Packet buffer of 512 chars
-	if(pktBuf == NULL)
-	{
-		printf("Error while creating packet buffer!\n");
-		close(fd);
-		close(params->sockFd);
-		exit(-1);
-	}
-	
-	memset(pktBuf, 0, currentBufSize); // Make all zeroes
-	
-	printf("Before recv: %d",params->sockFd);
-	while((retVal = recv(params->sockFd, pktBuf + currentBufSize - PACKET_BUFFER_SIZE, PACKET_BUFFER_SIZE, 0)) != 0) // Until nothing more to read
-	{
-		if(retVal == -1)
-		{
-			perror("recv");
-			free(pktBuf);
-			close(fd);
-			close(params->sockFd);
-			exit(-1);
-		}
-		
-		// Check if the buffer has newline
-		ptr = strchr(pktBuf, '\n');
-		if(ptr == NULL)
-		{
-			// No newline character, extend the buffer and continue reading
-			pktBuf = (char*)(realloc(pktBuf, currentBufSize + PACKET_BUFFER_SIZE));
-			if(pktBuf == NULL)
-			{
-				printf("Error while reallocating buffer!\n");
-				free(pktBuf);
-				close(fd);
-				close(params->sockFd);
-				exit(-1);
-			}
-			currentBufSize += PACKET_BUFFER_SIZE;
-		}
-		else
-		{
-			// Lock mutex
-			int rc = pthread_mutex_lock(&mutex);
-			if(rc != 0)
-			{
-				printf("Error while obtaining mutex: %d", rc);
-				exit(-1);
-			}
-
-			// Open the file
-			fd = open(AESD_SOCKET_DATA_FILE, O_RDWR | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-			if(fd == -1)
-			{
-				perror("socket data file open");
-				close(params->sockFd);
-				exit(-1);
-			}
-
-			// Buffer has newline character. Write till there into the file
-			write(fd, pktBuf, (ptr - pktBuf + 1) * sizeof(char));
-
-			// Send to client
-			SendFileDataToClient(fd, params->sockFd);
-
-			// Close the file
-			close(fd);
-
-			// Release the mutex
-			rc = pthread_mutex_unlock(&mutex);
-			if(rc != 0)
-			{
-				printf("Error while releasing mutex: %d", rc);
-				close(params->sockFd);
-				exit(-1);
-			}
-			
-			// Move rest of the content to the start of buffer
-			remainingSize = (int)(currentBufSize + pktBuf - ptr - 1);
-			memcpy(pktBuf, ptr + 1, remainingSize);
-			
-			// Clear out the remaining part
-			memset(pktBuf + remainingSize, 0, currentBufSize - remainingSize);
-		}
-	}
-	
-	free(pktBuf);
-	close(params->sockFd);
-	params->connectionInProgress = false;
-	syslog(LOG_INFO, "Closed connection from %s", clientIpStr); // Log that connection closed
-}
 
 /*
  * Main: Entry point for the program
@@ -240,6 +86,7 @@ int main(int argc, char* argv[])
 	//Register for signals
 	signal(SIGINT, SignalHandler);
 	signal(SIGTERM, SignalHandler);
+	signal(SIGALRM, AlarmHandler);
 	
 	// Set up syslog
 	openlog("aesdsocket", LOG_NDELAY, LOG_USER);
@@ -324,9 +171,20 @@ int main(int argc, char* argv[])
 		close(serverSockfd);
 		return -1;
 	}
+
+	// Set the timer
+	rc = SetTimer();
+	if(rc == -1)
+	{
+		close(serverSockfd);
+		return -1;
+	}
 	
 	while(!terminate)
 	{
+		// Clean up the list if needed
+		CleanUpList();
+
 		// Accept the connection
 		int acceptedSockFd = accept(serverSockfd, &clientInfo, &clientInfoLen);
 		if(acceptedSockFd == -1)
@@ -335,8 +193,6 @@ int main(int argc, char* argv[])
 			close(serverSockfd);
 			return -1;
 		}
-
-		printf("After accepting: %d",acceptedSockFd);
 		
 		// Create a node for this and add to list
 		struct threadInfo_s* infoPtr = malloc(sizeof(struct threadInfo_s));
@@ -353,23 +209,10 @@ int main(int argc, char* argv[])
 			close(serverSockfd);
     		return -1;
     	}
+		totalConnections++;
 
 		// Add to the list
 		SLIST_INSERT_HEAD(&head, infoPtr, entries);
-
-		// Clean up the list if needed
-		struct threadInfo_s* ptr = NULL;
-		struct threadInfo_s* nextPtr = NULL;
-		SLIST_FOREACH_SAFE(ptr, &head, entries, nextPtr)
-		{
-			if(ptr->connectionInProgress == false)
-			{
-				// This thread can be removed
-				pthread_join(ptr->threadId, NULL);
-				SLIST_REMOVE(&head, ptr, threadInfo_s, entries);
-				free(ptr);
-			}
-		}
 	}
 	
 	// If it reached this point, file must be deleted
@@ -382,4 +225,263 @@ int main(int argc, char* argv[])
 	
 	close(serverSockfd);
 	return 0;
+}
+
+/*
+ * Function for handling registered signals
+ */
+void SignalHandler(int signo)
+{
+	syslog(LOG_INFO, "Caught signal, exiting");
+	terminate = true;
+
+	// Close all threads
+	struct threadInfo_s* ptr = NULL;
+	while(!SLIST_EMPTY(&head))
+	{
+		ptr = SLIST_FIRST(&head);
+		if(ptr->connectionInProgress == false)
+		{
+			pthread_join(ptr->threadId, NULL);
+			SLIST_REMOVE_HEAD(&head, entries);
+			free(ptr);
+		}
+	}
+
+	int rc = remove(AESD_SOCKET_DATA_FILE);
+	if(rc == -1)
+		perror("remove socket data file");
+	if(serverSockfd != -1)
+		close(serverSockfd);
+
+	exit(0);
+
+}
+
+/*
+ * Function to send file content through socket
+ */
+void SendFileDataToClient(int fileFd, int socketFd)
+{
+	ssize_t ret;
+	char buf[512];
+
+	// Seek to start of file
+	lseek(fileFd, 0, SEEK_SET);
+
+	while ((ret = read (fileFd, buf, sizeof buf)) != 0)
+	{
+        if (ret == -1) 
+		{
+                if (errno == EINTR)
+                    continue;
+                perror ("read");
+                break;
+        }
+
+		// Send whatever is read to client
+		send(socketFd, buf, (ret/sizeof(char)), 0);
+	}
+}
+
+int SetTimer()
+{
+	struct itimerval delay;
+
+	delay.it_value.tv_sec = 10;
+    delay.it_value.tv_usec = 0;
+    delay.it_interval.tv_sec = 10;
+    delay.it_interval.tv_usec = 0;
+
+
+	int rc = setitimer(ITIMER_REAL, &delay, NULL);
+	if(rc)
+	{
+		perror("setitimer");
+		return -1;
+	}
+	return 0;
+}
+
+int ClearTimer()
+{
+	struct itimerval delay;
+
+	delay.it_value.tv_sec = 0;
+    delay.it_value.tv_usec = 0;
+    delay.it_interval.tv_sec = 0;
+    delay.it_interval.tv_usec = 0;
+
+
+	int rc = setitimer(ITIMER_REAL, &delay, NULL);
+	if(rc)
+	{
+		perror("cleartimer");
+		return -1;
+	}
+	return 0;
+}
+
+void WriteTimestampToFile(int fd)
+{
+	char buf[100];
+	memset(buf, 0, 100);
+
+	time_t t = time(NULL);
+  	struct tm currentTime = *localtime(&t);
+
+	snprintf(buf, 100, "timestamp: %d-%02d-%02d %02d:%02d:%02d\n", currentTime.tm_year + 1900, currentTime.tm_mon + 1, currentTime.tm_mday, currentTime.tm_hour, currentTime.tm_min, currentTime.tm_sec);
+	write(fd, buf, strlen(buf) * sizeof(char));
+}
+
+void CleanUpList()
+{
+	// Clean up the list
+	struct threadInfo_s* ptr = NULL;
+	struct threadInfo_s* nextPtr = NULL;
+	SLIST_FOREACH_SAFE(ptr, &head, entries, nextPtr)
+	{
+		if(ptr->connectionInProgress == false)
+		{
+			// This thread can be removed
+			pthread_join(ptr->threadId, NULL);
+			totalConnections--;
+			SLIST_REMOVE(&head, ptr, threadInfo_s, entries);
+			free(ptr);
+		}
+	}
+}
+
+/*
+ * Function for handling alarm signal
+ */
+void AlarmHandler(int signo)
+{
+	hasTimeElapsed = true;
+	CleanUpList();
+	if(totalConnections == 0)
+	{
+		int fd = fd = open(AESD_SOCKET_DATA_FILE, O_RDWR | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if(fd == -1)
+		{
+			perror("socket data file open");
+			exit(-1);
+		}
+		WriteTimestampToFile(fd);
+	}
+}
+
+void* ThreadSendAndReceive(void* threadParams)
+{
+	// Typecast the arguments
+	struct threadInfo_s* params = (struct threadInfo_s*)(threadParams);
+
+	// Log client IP to syslog
+	char clientIpStr[INET6_ADDRSTRLEN];
+	inet_ntop(AF_INET, params->clientInfo, clientIpStr, sizeof(clientIpStr));
+	syslog(LOG_INFO, "Accept connection from %s", clientIpStr);
+
+	char* pktBuf = NULL;
+	int fd, rc;
+	int currentBufSize = PACKET_BUFFER_SIZE;
+	ssize_t retVal;
+	char* ptr;
+	int remainingSize = 0;
+	
+	// Receive data from client and append to data file
+	pktBuf = (char*)(malloc(PACKET_BUFFER_SIZE * sizeof(char))); // Packet buffer of 512 chars
+	if(pktBuf == NULL)
+	{
+		printf("Error while creating packet buffer!\n");
+		close(fd);
+		close(params->sockFd);
+		exit(-1);
+	}
+	
+	memset(pktBuf, 0, currentBufSize); // Make all zeroes
+	
+	while((retVal = recv(params->sockFd, pktBuf + currentBufSize - PACKET_BUFFER_SIZE, PACKET_BUFFER_SIZE, 0)) != 0) // Until nothing more to read
+	{
+		if(retVal == -1)
+		{
+			perror("recv");
+			free(pktBuf);
+			close(fd);
+			close(params->sockFd);
+			exit(-1);
+		}
+
+		// Lock mutex
+		rc = pthread_mutex_lock(&mutex);
+		if(rc != 0)
+		{
+			printf("Error while obtaining mutex: %d", rc);
+			exit(-1);
+		}
+
+		// Open the file
+		fd = open(AESD_SOCKET_DATA_FILE, O_RDWR | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if(fd == -1)
+		{
+			perror("socket data file open");
+			close(params->sockFd);
+			exit(-1);
+		}
+
+		// Check if time has elapsed
+		if(hasTimeElapsed)
+		{
+			WriteTimestampToFile(fd);
+			hasTimeElapsed = false;
+		}
+		
+		// Check if the buffer has newline
+		ptr = strchr(pktBuf, '\n');
+		if(ptr == NULL)
+		{
+			// No newline character, extend the buffer and continue reading
+			pktBuf = (char*)(realloc(pktBuf, currentBufSize + PACKET_BUFFER_SIZE));
+			if(pktBuf == NULL)
+			{
+				printf("Error while reallocating buffer!\n");
+				free(pktBuf);
+				close(fd);
+				close(params->sockFd);
+				exit(-1);
+			}
+			currentBufSize += PACKET_BUFFER_SIZE;
+		}
+		else
+		{
+			// Buffer has newline character. Write till there into the file
+			write(fd, pktBuf, (ptr - pktBuf + 1) * sizeof(char));
+
+			// Send to client
+			SendFileDataToClient(fd, params->sockFd);
+
+			// Close the file
+			close(fd);
+
+			// Release the mutex
+			rc = pthread_mutex_unlock(&mutex);
+			if(rc != 0)
+			{
+				printf("Error while releasing mutex: %d", rc);
+				close(params->sockFd);
+				exit(-1);
+			}
+			
+			// Move rest of the content to the start of buffer
+			remainingSize = (int)(currentBufSize + pktBuf - ptr - 1);
+			memcpy(pktBuf, ptr + 1, remainingSize);
+			
+			// Clear out the remaining part
+			memset(pktBuf + remainingSize, 0, currentBufSize - remainingSize);
+		}
+	}
+
+	free(pktBuf);
+	close(params->sockFd);
+	params->connectionInProgress = false;
+	syslog(LOG_INFO, "Closed connection from %s", clientIpStr); // Log that connection closed
 }
