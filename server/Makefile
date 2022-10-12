@@ -1,15 +1,18 @@
 # Default compiler
-CC = gcc
+CC ?= $(CROSS_COMPILE)gcc
+
+# Flags
+LDFLAGS ?= -pthread -lrt
 
 all: aesdsocket
 
 # AESD socket application
 aesdsocket: clean aesdsocket.o
-	$(CROSS_COMPILE)$(CC) aesdsocket.o -o aesdsocket
+	$(CC) aesdsocket.o -o aesdsocket $(LDFLAGS)
 
 # aesdsocket .o files	
 aesdsocket.o: aesdsocket.c
-	$(CROSS_COMPILE)$(CC) -c aesdsocket.c
+	$(CC) -c aesdsocket.c $(LDFLAGS)
 	
 # Clean all binaries
 clean:
