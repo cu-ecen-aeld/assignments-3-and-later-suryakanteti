@@ -1,4 +1,10 @@
-Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
+The following is the message printed upon encountering a kernel oops in the faulty driver module with the numerically quoted bold lines giving us more information about the error:
+
+1. A null pointer dereference has caused the kernel oops
+2. The error has occurred 0x14 bytes (20 bytes) into the function faulty_write which has a total length of 0x20 bytes (32 bytes)
+
+<pre>
+<b>1. Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000</b>
 
 Mem abort info:
 
@@ -60,7 +66,7 @@ x2 : 0000000000000012 x1 : 0000000000000000 x0 : 0000000000000000
 
 Call trace:
 
- faulty_write+0x14/0x20 [faulty]
+<b>2. faulty_write+0x14/0x20 [faulty]</b>
  
  ksys_write+0x68/0x100
  
@@ -83,3 +89,4 @@ Code: d2800001 d2800000 d503233f d50323bf (b900003f)
 ---[ end trace 729738912a160441 ]---
 
 
+</pre>
