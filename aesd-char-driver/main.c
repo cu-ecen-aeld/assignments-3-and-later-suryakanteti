@@ -66,7 +66,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     if(filp == NULL || buf == NULL || f_pos == NULL)
     {
         retval = -EINVAL;
-        PDEBUG("NULL argument to aesd_read");
         goto READ_RET;
     }
 
@@ -84,7 +83,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     currentReadEntry = aesd_circular_buffer_find_entry_offset_for_fpos(&(dev->circularBuffer), *f_pos, &currentOffset);
     if(currentReadEntry == NULL)
     {
-        PDEBUG("current read entry in null");
         goto MUTEX_UNLOCK; // Invalid offset or no more bytes to be read
     }
 
@@ -179,7 +177,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         {
             kfree(dev->circularBuffer.entry[dev->circularBuffer.in_offs].buffptr);
         }
-        PDEBUG("Enqueueing %ld bytes into circular buffer", dev->newWriteEntry.size);
         aesd_circular_buffer_add_entry(&(dev->circularBuffer), &(dev->newWriteEntry));
 
         dev->newWriteEntry.buffptr = NULL;

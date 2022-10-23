@@ -19,10 +19,23 @@
 #include <pthread.h>
 #include <sys/time.h>
 
+// Switch
+
+#define USE_AESD_CHAR_DEVICE 1
+
+#ifdef USE_AESD_CHAR_DEVICE
+
+	#define AESD_SOCKET_DATA_FILE "/dev/aesdchar"
+
+#else
+
+	#define AESD_SOCKET_DATA_FILE "/var/tmp/aesdsocketdata"
+
+#endif
+
 // Macros
 #define PORT_NUM_STR "9000"
 #define MAX_PENDING_CONNECTIONS 3
-#define AESD_SOCKET_DATA_FILE "/var/tmp/aesdsocketdata"
 #define PACKET_BUFFER_SIZE 512
 
 // Global variables
@@ -172,6 +185,7 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
+#ifndef USE_AESD_CHAR_DEVICE
 	// Set the timer
 	rc = SetTimer();
 	if(rc == -1)
@@ -179,6 +193,7 @@ int main(int argc, char* argv[])
 		close(serverSockfd);
 		return -1;
 	}
+#endif
 	
 	while(!terminate)
 	{
@@ -248,9 +263,12 @@ void SignalHandler(int signo)
 		}
 	}
 
+#ifndef USE_AESD_CHAR_DEVICE
 	int rc = remove(AESD_SOCKET_DATA_FILE);
 	if(rc == -1)
 		perror("remove socket data file");
+#endif
+
 	if(serverSockfd != -1)
 		close(serverSockfd);
 
@@ -267,7 +285,9 @@ void SendFileDataToClient(int fileFd, int socketFd)
 	char buf[512];
 
 	// Seek to start of file
+#ifndef USE_AESD_CHAR_DEVICE	
 	lseek(fileFd, 0, SEEK_SET);
+#endif
 
 	while ((ret = read (fileFd, buf, sizeof buf)) != 0)
 	{
@@ -361,13 +381,17 @@ void AlarmHandler(int signo)
 	CleanUpList();
 	if(totalConnections == 0)
 	{
-		int fd = fd = open(AESD_SOCKET_DATA_FILE, O_RDWR | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		int fd = open(AESD_SOCKET_DATA_FILE, O_RDWR | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(fd == -1)
 		{
 			perror("socket data file open");
 			exit(-1);
 		}
+
+#ifndef USE_AESD_CHAR_DEVICE
 		WriteTimestampToFile(fd);
+#endif
+
 	}
 }
 
@@ -428,12 +452,14 @@ void* ThreadSendAndReceive(void* threadParams)
 			exit(-1);
 		}
 
+#ifndef USE_AESD_CHAR_DEVICE
 		// Check if time has elapsed
 		if(hasTimeElapsed)
 		{
 			WriteTimestampToFile(fd);
 			hasTimeElapsed = false;
 		}
+#endif
 		
 		// Check if the buffer has newline
 		ptr = strchr(pktBuf, '\n');
