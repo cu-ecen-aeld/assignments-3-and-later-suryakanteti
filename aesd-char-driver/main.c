@@ -18,6 +18,9 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+
+#include <linux/slab.h>
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -28,13 +31,15 @@ struct aesd_dev aesd_device;
 
 int aesd_open(struct inode *inode, struct file *filp)
 {
+    struct aesd_dev* dev;
+
     PDEBUG("open");
     /**
      * TODO: handle open
     */
 
-    struct aesd_dev* dev;
-    dev = containerof(inode->i_cdev, struct aesd_dev, cdev);
+    
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data = dev;
 
     return 0;
@@ -53,17 +58,17 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = 0;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-
     size_t currentOffset; // Offset in working entry
     size_t bytesToRead;
     struct aesd_dev* dev;
     struct aesd_buffer_entry* currentReadEntry;
 
+    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
+
     // Initial checks
     if(filp == NULL || buf == NULL || f_pos == NULL)
     {
-        retval = -EINVAl;
+        retval = -EINVAL;
         PDEBUG("NULL argument to aesd_read");
         goto READ_RET;
     }
@@ -90,7 +95,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
 
     // Copy to user space buffer
-    if(copy_to_user(buf, currentReadEntry->buffptr[currentOffset], bytesToRead))
+    if(copy_to_user(buf, currentReadEntry->buffptr + currentOffset, bytesToRead))
     {
         retval = -EFAULT;
         goto READ_RET;
@@ -107,6 +112,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
+    struct aesd_dev* dev;
+    char* kernelBuf;
+    struct aesd_buffer_entry newEntry;
+
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
 
     // Fetch the aesd_dev structure
@@ -120,7 +129,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // Allocate memory
-    char* kernelBuf = kmalloc(count, GFP_KERNEL);
+    kernelBuf = kmalloc(count, GFP_KERNEL);
     if(kernelBuf == NULL)
     {
         goto WRITE_RET; // Memory allocation failed
@@ -134,14 +143,13 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // Create new entry using this buffer
-    struct aesd_buffer_entry newEntry;
     newEntry.buffptr = kernelBuf;
     newEntry.size = count;
 
     // Write to the circular buffer, clearing old memory for overwriting
-    if(dev->circularBuffer->entry[dev->circularBuffer->in_offs].buffptr != NULL)
+    if(dev->circularBuffer.entry[dev->circularBuffer.in_offs].buffptr != NULL)
     {
-        kfree(dev->circularBuffer->entry[dev->circularBuffer->in_offs].buffptr);
+        kfree(dev->circularBuffer.entry[dev->circularBuffer.in_offs].buffptr);
     }
 
     aesd_circular_buffer_add_entry(&(dev->circularBuffer), &newEntry);
