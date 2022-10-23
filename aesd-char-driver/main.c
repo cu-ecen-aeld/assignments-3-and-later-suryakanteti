@@ -79,13 +79,13 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
 
     // Check how many bytes to read from buffer
-    if(currentReadEntry->size >= count)
+    if(currentReadEntry->size - currentOffset >= count)
     {
         bytesToRead = count;
     }
     else
     {
-        bytesToRead = currentReadEntry->size;
+        bytesToRead = currentReadEntry->size - currentOffset;
     }
 
 
@@ -96,9 +96,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         goto READ_RET;
     }
 
-    // Update the value of f_pos and count
-    f_pos += f_pos + bytesToRead;
-    count -= bytesToRead;
+    // Update the value of f_pos
+    *f_pos += bytesToRead;
     retval = bytesToRead;
 
     READ_RET: return retval;
@@ -143,8 +142,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if(dev->circularBuffer->entry[dev->circularBuffer->in_offs].buffptr != NULL)
     {
         kfree(dev->circularBuffer->entry[dev->circularBuffer->in_offs].buffptr);
-        aesd_circular_buffer_add_entry(&(dev->circularBuffer), &newEntry);
     }
+
+    aesd_circular_buffer_add_entry(&(dev->circularBuffer), &newEntry);
 
 
     // SURYA: Create a buffer and keep appending to until newline is encountered
