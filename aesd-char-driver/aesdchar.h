@@ -12,7 +12,7 @@
 
 #define AESD_DEBUG 1  //Remove comment on this line to enable debug
 
-#undef PDEBUG             /* undef it, just in case */
+//#undef PDEBUG             /* undef it, just in case */
 #ifdef AESD_DEBUG
 #  ifdef __KERNEL__
      /* This one if debugging is on, and kernel space */
@@ -33,7 +33,7 @@ struct aesd_dev
 
     struct cdev cdev;     /* Char device structure      */
     struct aesd_circular_buffer circularBuffer;
-    struct aesd_buffer_entry* currentWriteEntry;
+    struct aesd_buffer_entry newWriteEntry;
     struct mutex mut;
 };
 
