@@ -67,7 +67,6 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
 {
     if(buffer != NULL && add_entry != NULL)
     {
-        //strncpy(buffer->entry[buffer->in_offs].buffptr, add_entry->buffptr, add_entry->size); // Copy the string into the entry
         buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
         buffer->entry[buffer->in_offs].size = add_entry->size; // Assign the size as well
 
