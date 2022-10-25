@@ -71,7 +71,7 @@ char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const 
         // Update out_offs if buffer already full    
         if(buffer->full)
         {
-            currentBuf = buffer->entry[buffer->out_offs].buffptr;
+            currentBuf = (char*)buffer->entry[buffer->out_offs].buffptr;
 
             if(buffer->out_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
                 buffer->out_offs = 0;
