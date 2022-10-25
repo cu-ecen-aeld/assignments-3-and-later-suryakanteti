@@ -10,6 +10,7 @@
 
 #ifdef __KERNEL__
 #include <linux/string.h>
+#include <linux/printk.h>
 #else
 #include <string.h>
 #endif
@@ -56,6 +57,26 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     return NULL;
 }
 
+void PrintCircularBuffer(struct aesd_circular_buffer *buffer)
+{
+    int i;
+    char* printVal;
+
+    for(i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        printVal = (char*)buffer->entry[i].buffptr;
+
+        if(printVal == NULL)
+        {
+            printk("null, size: %ld", buffer->entry[i].size);
+        }
+        else
+        {
+            printk("%s, size: %ld ", printVal, buffer->entry[i].size);
+        }
+    }
+}
+
 /**
 * Adds entry @param add_entry to @param buffer in the location specified in buffer->in_offs.
 * If the buffer was already full, overwrites the oldest entry and advances buffer->out_offs to the
@@ -66,6 +87,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
     char* currentBuf = NULL;
+
     if(buffer != NULL && add_entry != NULL)
     {
         // Update out_offs if buffer already full    
@@ -92,6 +114,10 @@ char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const 
         if(buffer->in_offs == buffer->out_offs)
             buffer->full = true;
     }
+
+    // Print circular buffer
+    PrintCircularBuffer(buffer);
+
     return currentBuf;
 }
 
