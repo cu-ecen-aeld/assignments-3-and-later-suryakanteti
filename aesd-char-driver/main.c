@@ -61,6 +61,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     struct aesd_buffer_entry* currentReadEntry;
 
     PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
+    PDEBUG("Proceed to reading!");
 
     // Initial checks
     if(filp == NULL || buf == NULL || f_pos == NULL)
@@ -120,6 +121,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     char* tempPtr;
 
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+    PDEBUG("Proceed to writing!");
 
     // Initial checks
     if(filp == NULL || buf == NULL || f_pos == NULL)
