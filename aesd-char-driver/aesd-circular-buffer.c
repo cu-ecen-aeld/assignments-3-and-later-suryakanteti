@@ -2,19 +2,16 @@
  * @file aesd-circular-buffer.c
  * @brief Functions and data related to a circular buffer imlementation
  *
- * @author Dan Walkes, updated by Guruprashanth Krishnakumar
- * @date 2020-03-01, updated on 10/11/2022
+ * @author Dan Walkes
+ * @date 2020-03-01
  * @copyright Copyright (c) 2020
  *
  */
 
 #ifdef __KERNEL__
 #include <linux/string.h>
-#include <linux/slab.h>
 #else
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 #endif
 
 #include "aesd-circular-buffer.h"
@@ -32,43 +29,30 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
-    /**
-    * TODO: implement per description
-    */
-    //incremental total size of all the buffers traversed
-    int total_size = 0;
-    //iterate a maximum times of num_bufs_iterated = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED
-    int num_bufs_iterated;
-    //starting index should point to buffer->out_offs
-    int buf_idx ;
-    //Check for invalid inputs
-    if(!buffer || !entry_offset_byte_rtn)
+    if(buffer != NULL && entry_offset_byte_rtn != NULL)
     {
-        return NULL;
-    }
+        uint8_t current_offs = buffer->out_offs;
 
-    for(num_bufs_iterated =0,buf_idx =buffer->out_offs;
-            num_bufs_iterated<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-            buf_idx = ((buf_idx + 1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED),num_bufs_iterated++)
-            {
-                //get the aesd_buffer_entry address, if size of data in that = 0, assume enough data not 
-                //present since circular buf initialized with memset.
-                struct aesd_buffer_entry *entry = &(buffer->entry[buf_idx]);
-                if(entry->size == 0)
-                {
-                    return NULL;
-                }
-                //if char offset within current buffer, return current buffer along with the relative 
-                //offset within the buffer.
-                if((total_size + entry->size -1) >= char_offset)
-                {
-                    
-                    *entry_offset_byte_rtn = (char_offset - total_size);
-                    return entry;
-                }
-                //continue incremening total size otherwise
-                total_size += entry->size;
-            } 
+        // Loop till we can find the char_offset
+        while(char_offset >= buffer->entry[current_offs].size)
+        {
+            char_offset -= buffer->entry[current_offs].size;
+
+            // Update current location
+            if(current_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
+                current_offs = 0;
+            else
+                current_offs += 1;
+
+            // If back at the same location, return NULL
+            if(current_offs == buffer->out_offs)
+                return NULL;
+        }
+
+        // Reached the offset
+        *entry_offset_byte_rtn = char_offset;
+        return &(buffer->entry[current_offs]);
+    }
     return NULL;
 }
 
@@ -79,37 +63,33 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 * Any necessary locking must be handled by the caller
 * Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
 */
-char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    /**
-    * TODO: implement per description
-    */
-    //check for invalid arguments
-    char *ret_val = NULL;
-    if(!buffer || !add_entry)
+    if(buffer != NULL && add_entry != NULL)
     {
-        return ret_val;
+        buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+        buffer->entry[buffer->in_offs].size = add_entry->size; // Assign the size as well
+
+        // Update out_offs if buffer already full    
+        if(buffer->full)
+        {
+            if(buffer->out_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
+                buffer->out_offs = 0;
+            else
+                buffer->out_offs++;
+        }
+
+        // Update in_offs
+        if(buffer->in_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
+            buffer->in_offs = 0;
+        else
+            buffer->in_offs++;
+
+        // Check if now full
+        if(buffer->in_offs == buffer->out_offs)
+            buffer->full = true;
     }
-    //Condition 1 checked in case the reader did not update queue->full flag after reading from a full queue.
-    //Condition 2 checked to avoid incrementing out_offs at the initial state
-    if(buffer->in_offs == buffer->out_offs && buffer->full)
-    {
-        ret_val = (char*)buffer->entry[buffer->out_offs].buffptr;
-        buffer->out_offs = ((buffer->out_offs + 1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
-    }
-    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
-    buffer->entry[buffer->in_offs].size = add_entry->size;
-    buffer->in_offs = ((buffer->in_offs + 1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
-    //check if queue full, otherwise update the flag to false (for safety).
-    if(buffer->in_offs == buffer->out_offs)
-    {
-        buffer->full = true;
-    }
-    else
-    {
-        buffer->full = false;
-    }
-    return ret_val;
+
 }
 
 /**
@@ -118,35 +98,4 @@ char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const 
 void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
 {
     memset(buffer,0,sizeof(struct aesd_circular_buffer));
-}
-
-void destroy_circular_buffer(struct aesd_circular_buffer *buffer)
-{
-    uint8_t ptr;
-    char *entry;
-    if(!buffer)
-    {
-        return;
-    }
-    if(buffer->in_offs == buffer->out_offs && !buffer->full)
-    {
-        return;
-    }
-    ptr =  buffer->out_offs;
-    entry = (char *)buffer->entry[ptr].buffptr;
-    while(entry)
-    {
-        #ifdef __KERNEL__
-        kfree(entry);
-        #else
-        free(entry);
-        #endif
-        ptr = ((ptr + 1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
-        if(ptr == buffer->in_offs)
-        {
-            break;
-        }
-        entry = (char *)buffer->entry[ptr].buffptr;
-    }
-
 }
