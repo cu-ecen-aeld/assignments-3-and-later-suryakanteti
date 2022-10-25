@@ -10,6 +10,7 @@
 
 #ifdef __KERNEL__
 #include <linux/string.h>
+#include <linux/printk.h>
 #else
 #include <string.h>
 #endif
@@ -63,22 +64,25 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 * Any necessary locking must be handled by the caller
 * Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
 */
-void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
+    char* currentBuf = NULL;
+
     if(buffer != NULL && add_entry != NULL)
     {
-        //strncpy(buffer->entry[buffer->in_offs].buffptr, add_entry->buffptr, add_entry->size); // Copy the string into the entry
-        buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
-        buffer->entry[buffer->in_offs].size = add_entry->size; // Assign the size as well
-
         // Update out_offs if buffer already full    
         if(buffer->full)
         {
+            currentBuf = (char*)buffer->entry[buffer->out_offs].buffptr;
+
             if(buffer->out_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
                 buffer->out_offs = 0;
             else
                 buffer->out_offs++;
         }
+
+        buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+        buffer->entry[buffer->in_offs].size = add_entry->size; // Assign the size as well
 
         // Update in_offs
         if(buffer->in_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
@@ -91,6 +95,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
             buffer->full = true;
     }
 
+    return currentBuf;
 }
 
 /**
