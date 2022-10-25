@@ -259,12 +259,25 @@ int aesd_init_module(void)
 
 void aesd_cleanup_module(void)
 {
+    int i;
+    char* tempPtr;
+
     dev_t devno = MKDEV(aesd_major, aesd_minor);
 
     cdev_del(&aesd_device.cdev);
 
     // Clear up the mutex
     mutex_destroy(&(aesd_device.mut));
+
+    // Clean up circular buffer
+    for(i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        tempPtr = (char*)aesd_device.circularBuffer.entry[i].buffptr;
+        if(tempPtr != NULL)
+        {
+            kfree(tempPtr);
+        }
+    }
 
     unregister_chrdev_region(devno, 1);
 }
