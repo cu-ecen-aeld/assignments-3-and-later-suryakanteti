@@ -68,11 +68,11 @@ void PrintCircularBuffer(struct aesd_circular_buffer *buffer)
 
         if(printVal == NULL)
         {
-            printk("null, size: %ld", buffer->entry[i].size);
+            printk(KERN_DEBUG "null, size: %ld", buffer->entry[i].size);
         }
         else
         {
-            printk("%s, size: %ld ", printVal, buffer->entry[i].size);
+            printk(KERN_DEBUG "%s, size: %ld ", printVal, buffer->entry[i].size);
         }
     }
 }
