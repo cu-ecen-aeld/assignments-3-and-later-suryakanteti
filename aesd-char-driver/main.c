@@ -88,7 +88,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
 
     // Check how many bytes to read from buffer
-    if(currentReadEntry->size - currentOffset >= count)
+    if((currentReadEntry->size - currentOffset) >= count)
     {
         bytesToRead = count;
     }
@@ -175,12 +175,18 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // Write to the circular buffer if newline is encountered
     if(strchr(dev->newWriteEntry.buffptr, '\n') != NULL)
     {
-        if(dev->circularBuffer.full) // Free existing memory
+        tempPtr = aesd_circular_buffer_add_entry(&(dev->circularBuffer), &(dev->newWriteEntry));
+
+        if(tempPtr != NULL) // Free existing memory
+        {
+            kfree(tempPtr);
+        }
+
+        /*if(dev->circularBuffer.full) 
         {
             kfree(dev->circularBuffer.entry[dev->circularBuffer.in_offs].buffptr);
-        }
-        aesd_circular_buffer_add_entry(&(dev->circularBuffer), &(dev->newWriteEntry));
-
+        }*/
+        
         dev->newWriteEntry.buffptr = NULL;
         dev->newWriteEntry.size = 0;
     }
