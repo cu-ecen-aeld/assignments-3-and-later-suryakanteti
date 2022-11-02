@@ -51,6 +51,53 @@ int aesd_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
+long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int offset)
+{
+    long finalOffset = 0;
+    struct aesd_dev* dev = filp->private_data;
+    int i;
+
+    // Check for invalid cases
+    if(cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || dev->circularBuffer.entry[cmd].size == 0 || offset >= dev->circularBuffer.entry[cmd].size)
+    {
+        return -EINVAL;
+    }
+
+    // Find the final offset
+    for(i = 0; i < cmd; i++)
+    {
+        finalOffset += dev->circularBuffer.entry[i].size;
+    }
+    finalOffset += offset;
+
+    return finalOffset;
+}
+
+long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
+{
+    long retVal;
+    
+    // Check for the command
+    switch(cmd)
+    {
+        case AESDCHAR_IOCSEEKTO:
+        {
+            struct aesd_seekto seekto;
+            if(copy_from_user(&seekto, (const void __user*) arg, sizeof(seekto)) != 0)
+            {
+                retVal = EFAULT;
+            }
+            else
+            {
+                retVal = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+            }
+            break;
+        }
+    }
+
+    return retVal;
+}
+
 loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
 {
     loff_t size = 0;
@@ -246,6 +293,7 @@ struct file_operations aesd_fops = {
     .open =     aesd_open,
     .release =  aesd_release,
     .llseek = aesd_llseek,
+    .ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
