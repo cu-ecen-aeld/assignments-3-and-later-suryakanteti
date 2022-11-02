@@ -56,8 +56,15 @@ int aesd_release(struct inode *inode, struct file *filp)
 long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int offset)
 {
     long finalOffset = 0;
-    struct aesd_dev* dev = filp->private_data;
     int i;
+    struct aesd_dev* dev = filp->private_data;
+
+    // Lock the data using a mutex
+    if(mutex_lock_interruptible(&(dev->mut)))
+    {
+        retVal = -EINTR;
+        goto OFFSET_RET;
+    }
 
     // Check for invalid cases
     if(cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || dev->circularBuffer.entry[cmd].size == 0 || offset >= dev->circularBuffer.entry[cmd].size)
@@ -73,7 +80,9 @@ long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int o
     finalOffset += offset;
     filp->f_pos = finalOffset;
 
-    return 0;
+    // Unlock the mutex
+    mutex_unlock(&(dev->mut));
+    OFFSET_RET: return 0;
 }
 
 long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
@@ -94,8 +103,6 @@ long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
             {
                 retVal = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
             }
-
-            
             break;
         }
     }
