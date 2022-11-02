@@ -21,6 +21,8 @@
 
 #include <linux/slab.h>
 
+#include "aesd_ioctl.h"
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -69,13 +71,14 @@ long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int o
         finalOffset += dev->circularBuffer.entry[i].size;
     }
     finalOffset += offset;
+    filp->f_pos = finalOffset;
 
-    return finalOffset;
+    return 0;
 }
 
 long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
-    long retVal;
+    long retVal = -ENOTTY;
     
     // Check for the command
     switch(cmd)
@@ -91,6 +94,8 @@ long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
             {
                 retVal = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
             }
+
+            
             break;
         }
     }
@@ -293,7 +298,7 @@ struct file_operations aesd_fops = {
     .open =     aesd_open,
     .release =  aesd_release,
     .llseek = aesd_llseek,
-    .ioctl = aesd_ioctl,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
