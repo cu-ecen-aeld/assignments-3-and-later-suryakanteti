@@ -62,8 +62,7 @@ long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int o
     // Lock the data using a mutex
     if(mutex_lock_interruptible(&(dev->mut)))
     {
-        retVal = -EINTR;
-        goto OFFSET_RET;
+    	return -EINTR;
     }
 
     // Check for invalid cases
@@ -82,7 +81,7 @@ long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int o
 
     // Unlock the mutex
     mutex_unlock(&(dev->mut));
-    OFFSET_RET: return 0;
+    return 0;
 }
 
 long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
