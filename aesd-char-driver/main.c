@@ -51,6 +51,37 @@ int aesd_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
+loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
+{
+    loff_t size = 0;
+    loff_t retVal;
+    struct aesd_dev* dev;
+    int i;
+
+    dev = filp->private_data;
+
+    // Lock the data using a mutex
+    if(mutex_lock_interruptible(&(dev->mut)))
+    {
+        retVal = -EINTR;
+        goto SEEK_RET;
+    }
+
+    // Calculate total size of the buffer
+    for(i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        size += dev->circularBuffer.entry[i].size;
+    }
+    
+    // Seek
+    retVal = fixed_size_llseek(filp, off, whence, size);
+
+    // Unlock the mutex
+    mutex_unlock(&(dev->mut));
+    
+    SEEK_RET: return retVal;
+}
+
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
@@ -214,6 +245,7 @@ struct file_operations aesd_fops = {
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek = aesd_llseek,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
