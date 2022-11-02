@@ -21,6 +21,8 @@
 
 #include <linux/slab.h>
 
+#include "aesd_ioctl.h"
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -49,6 +51,93 @@ int aesd_release(struct inode *inode, struct file *filp)
     filp->private_data = NULL;
 
     return 0;
+}
+
+long aesd_adjust_file_offset(struct file* filp, unsigned int cmd, unsigned int offset)
+{
+    long finalOffset = 0;
+    int i;
+    struct aesd_dev* dev = filp->private_data;
+
+    // Lock the data using a mutex
+    if(mutex_lock_interruptible(&(dev->mut)))
+    {
+    	return -EINTR;
+    }
+
+    // Check for invalid cases
+    if(cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || dev->circularBuffer.entry[cmd].size == 0 || offset >= dev->circularBuffer.entry[cmd].size)
+    {
+        return -EINVAL;
+    }
+
+    // Find the final offset
+    for(i = 0; i < cmd; i++)
+    {
+        finalOffset += dev->circularBuffer.entry[i].size;
+    }
+    finalOffset += offset;
+    filp->f_pos = finalOffset;
+
+    // Unlock the mutex
+    mutex_unlock(&(dev->mut));
+    return 0;
+}
+
+long aesd_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
+{
+    long retVal = -ENOTTY;
+    
+    // Check for the command
+    switch(cmd)
+    {
+        case AESDCHAR_IOCSEEKTO:
+        {
+            struct aesd_seekto seekto;
+            if(copy_from_user(&seekto, (const void __user*) arg, sizeof(seekto)) != 0)
+            {
+                retVal = EFAULT;
+            }
+            else
+            {
+                retVal = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+            }
+            break;
+        }
+    }
+
+    return retVal;
+}
+
+loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
+{
+    loff_t size = 0;
+    loff_t retVal;
+    struct aesd_dev* dev;
+    int i;
+
+    dev = filp->private_data;
+
+    // Lock the data using a mutex
+    if(mutex_lock_interruptible(&(dev->mut)))
+    {
+        retVal = -EINTR;
+        goto SEEK_RET;
+    }
+
+    // Calculate total size of the buffer
+    for(i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        size += dev->circularBuffer.entry[i].size;
+    }
+    
+    // Seek
+    retVal = fixed_size_llseek(filp, off, whence, size);
+
+    // Unlock the mutex
+    mutex_unlock(&(dev->mut));
+    
+    SEEK_RET: return retVal;
 }
 
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
@@ -214,6 +303,8 @@ struct file_operations aesd_fops = {
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek = aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

@@ -19,6 +19,8 @@
 #include <pthread.h>
 #include <sys/time.h>
 
+#include "../aesd-char-driver/aesd_ioctl.h"
+
 // Switch
 
 #define USE_AESD_CHAR_DEVICE 1
@@ -479,8 +481,32 @@ void* ThreadSendAndReceive(void* threadParams)
 		}
 		else
 		{
-			// Buffer has newline character. Write till there into the file
-			write(fd, pktBuf, (ptr - pktBuf + 1) * sizeof(char));
+			// Buffer has newline character. Check if command, else write
+			const char* seekStr = "AESDCHAR_IOCSEEKTO:";
+			unsigned int x, y;
+
+			if(strncmp(pktBuf, seekStr, sizeof(seekStr)) == 0)
+			{
+				// Parse X and Y
+				sscanf(pktBuf, "AESDCHAR_IOCSEEKTO:%u,%u", &x, &y);
+				
+				struct aesd_seekto seekto;
+				seekto.write_cmd = x;
+				seekto.write_cmd_offset = y;
+
+				// Call ioctl
+				rc = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+				if(rc != 0)
+				{
+					perror("ioctl");
+					close(params->sockFd);
+					exit(-1);
+				}
+			}
+			else
+			{
+				write(fd, pktBuf, (ptr - pktBuf + 1) * sizeof(char));
+			}
 
 			// Send to client
 			SendFileDataToClient(fd, params->sockFd);
